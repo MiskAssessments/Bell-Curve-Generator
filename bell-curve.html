@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bell Curve Generator for Class Scores</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 20px;
+      background: #f5f5f7;
+      color: #222;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 20px 24px;
+      border-radius: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    }
+    h1 {
+      font-size: 1.6rem;
+      margin-bottom: 0.25rem;
+    }
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .controls input[type="number"] {
+      width: 90px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-family: inherit;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 24px;
+      margin-top: 20px;
+    }
+    canvas {
+      background: #ffffff;
+      border-radius: 10px;
+      height: 340px !important;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin-top: 8px;
+    }
+    th, td {
+      border: 1px solid #e5e7eb;
+      padding: 6px 8px;
+      text-align: left;
+    }
+    th {
+      background: #f3f4f6;
+    }
+    .subheading {
+      font-weight: 600;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Bell Curve Generator</h1>
+  <p>Paste student scores (comma, space, or line separated) and enter total marks if used.</p>
+
+  <textarea id="scoresInput">36, 33, 21, 26, 36, 15, 27, 40, 42, 30, 37, 31, 29, 30, 38.5, 36.5, 44, 45, 32, 38.5, 35.5, 32, 26</textarea>
+
+  <div class="controls">
+    <label>
+      Total marks:
+      <input type="number" id="maxMarks" value="55" min="1" />
+    </label>
+    <button onclick="generateCurve()">Generate</button>
+  </div>
+
+  <div class="grid">
+    <div>
+      <p class="subheading">Bell Curve with Performance Bands</p>
+      <canvas id="curveChart"></canvas>
+    </div>
+    <div>
+      <p class="subheading">Summary statistics</p>
+      <div id="summary"></div>
+
+      <p class="subheading">Performance bands</p>
+      <table id="bandsTable"></table>
+
+      <p class="subheading">Student scores with band</p>
+      <table id="studentsTable"></table>
+    </div>
+  </div>
+</div>
+
+<script>
+  let chartInstance = null;
+
+  function parseScores(text) {
+    return text.split(/[\s,]+/).map(v => parseFloat(v)).filter(v => !isNaN(v));
+  }
+
+  function stats(arr) {
+    const n = arr.length;
+    const mean = arr.reduce((a,b)=>a+b,0)/n;
+    const sd = Math.sqrt(arr.reduce((a,b)=>a+(b-mean)**2,0)/n);
+    return { n, mean, sd, min: Math.min(...arr), max: Math.max(...arr) };
+  }
+
+  function normalPdf(x, mu, sigma) {
+    return (1/(sigma*Math.sqrt(2*Math.PI))) * Math.exp(-0.5*((x-mu)/sigma)**2);
+  }
+
+  function generateCurve(){
+    const scores = parseScores(document.getElementById("scoresInput").value);
+    const maxMarks = parseFloat(document.getElementById("maxMarks").value);
+    const { n, mean, sd, min, max } = stats(scores);
+
+    if(n < 3) return alert("Please enter at least 3 valid numbers.");
+
+    // Define plotting range = mean ± 2SD, bounded by 0 and total marks
+    let xMin = Math.max(0, mean - 2*sd);
+    let xMax = Math.min(maxMarks, mean + 2*sd);
+
+    // Compute curve points
+    const xs=[], ys=[];
+    let maxY=0;
+    for(let i=0;i<200;i++){
+      const x = xMin + i*(xMax-xMin)/199;
+      const y = normalPdf(x, mean, sd);
+      xs.push(x);
+      ys.push(y);
+      if(y>maxY) maxY=y;
+    }
+
+    // Bands: based on mean and SD
+    const bands = {
+      "Emerging":[0, mean - sd],
+      "Developing":[mean - sd, mean - 0.5*sd],
+      "Secured":[mean - 0.5*sd, mean + 0.5*sd],
+      "Proficient":[mean + 0.5*sd, mean + sd],
+      "Exemplary":[mean + sd, maxMarks]
+    };
+
+    // Summary UI
+    document.getElementById("summary").innerHTML=`
+      <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Students</td><td>${n}</td></tr>
+        <tr><td>Mean</td><td>${mean.toFixed(2)} (${(mean/maxMarks*100).toFixed(1)}%)</td></tr>
+        <tr><td>SD</td><td>${sd.toFixed(2)}</td></tr>
+        <tr><td>Range</td><td>${min}–${max}</td></tr>
+      </table>
+    `;
+
+    // Band summary table
+    let bandRows = "<tr><th>Band</th><th>Range</th><th>Count</th></tr>";
+    for(const [name,[lo,hi]] of Object.entries(bands)){
+      const count = scores.filter(s=>s>=lo && s<=hi).length;
+      bandRows += `<tr><td>${name}</td><td>${lo.toFixed(1)}–${hi.toFixed(1)}</td><td>${count}</td></tr>`;
+    }
+    document.getElementById("bandsTable").innerHTML = bandRows;
+
+    // Student + band table
+    let rows = "<tr><th>#</th><th>Score</th><th>Band</th></tr>";
+    scores.forEach((s,i)=>{
+      const b = Object.entries(bands).find(([_,[l,h]])=>s>=l && s<=h)?.[0] ?? "N/A";
+      rows+=`<tr><td>${i+1}</td><td>${s}</td><td>${b}</td></tr>`;
+    });
+    document.getElementById("studentsTable").innerHTML=rows;
+
+    // Background band colours
+    const bandColours={
+      "Emerging":"rgba(253,226,197,0.5)",
+      "Developing":"rgba(217,236,255,0.5)",
+      "Secured":"rgba(196,240,225,0.5)",
+      "Proficient":"rgba(255,249,196,0.5)",
+      "Exemplary":"rgba(208,228,255,0.5)"
+    };
+
+    const bandPlugin={
+      id:"bandBG",
+      beforeDraw(chart){
+        const {ctx, chartArea, scales:{x,y}}=chart;
+        ctx.save();
+        for(const [name,[lo,hi]] of Object.entries(bands)){
+          const start=Math.max(lo,xMin), end=Math.min(hi,xMax);
+          const xStart=x.getPixelForValue(start);
+          const xEnd=x.getPixelForValue(end);
+          ctx.fillStyle=bandColours[name];
+          ctx.fillRect(xStart,chartArea.top,xEnd-xStart,chartArea.bottom-chartArea.top);
+          ctx.fillStyle="#222";
+          ctx.font="10px sans-serif";
+          ctx.textAlign="center";
+          ctx.fillText(name,(xStart+xEnd)/2, y.getPixelForValue(normalPdf((start+end)/2,mean,sd))-10);
+        }
+        ctx.restore();
+      }
+    };
+
+    // Draw chart
+    const ctx=document.getElementById("curveChart").getContext("2d");
+    if(chartInstance) chartInstance.destroy();
+
+    chartInstance=new Chart(ctx,{
+      type:"line",
+      data:{
+        datasets:[{
+          label:"Bell Curve",
+          data:xs.map((v,i)=>({x:v,y:ys[i]})),
+          borderColor:"#f59e0b",
+          borderWidth:2,
+          pointRadius:0,
+          tension:0.2
+        }]
+      },
+      options:{
+        plugins:{legend:{display:false}, tooltip:{enabled:false}},
+        scales:{
+          x:{
+            type:"linear",
+            min:xMin,
+            max:xMax,
+            title:{display:true,text:`Score (out of ${maxMarks})`},
+            ticks:{
+              maxTicksLimit:7,
+              font:{size:11},
+              callback:(v)=>Number.isInteger(v)?v:""
+            }
+          },
+          y:{
+            min:0,
+            max:maxY*1.25,
+            ticks:{
+              maxTicksLimit:5,
+              font:{size:11},
+              callback:v=>v.toFixed(2)
+            },
+            title:{display:true,text:"Density"}
+          }
+        }
+      },
+      plugins:[bandPlugin]
+    });
+  }
+
+  window.onload=generateCurve;
+</script>
+</body>
+</html>
