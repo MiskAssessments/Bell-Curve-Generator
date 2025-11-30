@@ -184,8 +184,9 @@
     canvas {
       background: #ffffff;
       border-radius: 10px;
-      height: 340px !important;
+      height: 280px !important;
       border: 1px solid #E5E7EB;
+      margin-bottom: 10px;
     }
 
     table {
@@ -237,7 +238,7 @@
   </header>
 
   <p style="font-size:0.9rem; margin-top:0;">
-    Paste student scores, enter total marks, then generate a fitted normal curve with performance bands.
+    Paste student scores, enter total marks, then generate fitted normal curves with performance bands. The first chart shows Emerging to Exemplary, the second shows grades 1 to 9.
   </p>
 
   <textarea id="scoresInput">36, 33, 21, 26, 36, 15, 27, 40, 42, 30, 37, 31, 29, 30, 38.5, 36.5, 44, 45, 32, 38.5, 35.5, 32, 26</textarea>
@@ -255,22 +256,28 @@
     <button class="btn-ghost" onclick="downloadPDF()">Download as PDF</button>
   </div>
   <div class="hint">
-    Reset clears the inputs. The current chart stays in view until you generate again.
+    Reset clears the inputs. The current charts stay in view until you generate again.
   </div>
 
   <div class="grid">
     <div>
-      <p class="subheading">Bell curve with performance bands</p>
+      <p class="subheading">Bell curve - Emerging to Exemplary bands</p>
       <canvas id="curveChart"></canvas>
+
+      <p class="subheading" style="margin-top:4px;">Bell curve - 1 to 9 grading scale</p>
+      <canvas id="stanineChart"></canvas>
     </div>
     <div>
       <p class="subheading">Summary statistics</p>
       <div id="summary"></div>
 
-      <p class="subheading">Performance bands</p>
+      <p class="subheading">Performance bands (Emerging to Exemplary)</p>
       <table id="bandsTable"></table>
 
-      <p class="subheading">Student scores with band</p>
+      <p class="subheading">1 to 9 grade distribution</p>
+      <table id="stanineTable"></table>
+
+      <p class="subheading">Student scores with Emerging to Exemplary band</p>
       <table id="studentsTable"></table>
     </div>
   </div>
@@ -282,6 +289,7 @@
 
 <script>
   let chartInstance = null;
+  let stanineChartInstance = null;
 
   function parseScores(text) {
     return text.split(/[\s,]+/).map(v => parseFloat(v)).filter(v => !isNaN(v));
@@ -309,10 +317,10 @@
 
     const { n, mean, sd, min, max } = stats(scores);
 
-    // Define plotting range = mean ± 2SD, bounded by 0 and total marks
+    // Range for charts - mean ± 2SD, bounded by 0 and total marks
     let xMin = Math.max(0, mean - 2*sd);
     let xMax = Math.min(maxMarks, mean + 2*sd);
-    if (xMax <= xMin) { // fall back if SD tiny
+    if (xMax <= xMin) {
       xMin = Math.max(0, min - 2);
       xMax = Math.min(maxMarks, max + 2);
     }
@@ -328,14 +336,25 @@
       if(y>maxY) maxY=y;
     }
 
-    // Bands based on SD
-    const bands = {
+    // 5-band Emerging to Exemplary
+    const bands5 = {
       "Emerging":[0, mean - sd],
       "Developing":[mean - sd, mean - 0.5*sd],
       "Secured":[mean - 0.5*sd, mean + 0.5*sd],
       "Proficient":[mean + 0.5*sd, mean + sd],
       "Exemplary":[mean + sd, maxMarks]
     };
+
+    // 1-9 bands based on z-scores (stanine-style)
+    const stanineZ = [-Infinity, -1.75, -1.25, -0.75, -0.25, 0.25, 0.75, 1.25, 1.75, Infinity];
+    const stanineBands = {};
+    for (let grade = 1; grade <= 9; grade++) {
+      const zLow = stanineZ[grade - 1];
+      const zHigh = stanineZ[grade];
+      const rawLow = mean + zLow * sd;
+      const rawHigh = mean + zHigh * sd;
+      stanineBands[grade] = [rawLow, rawHigh];
+    }
 
     // Summary UI
     document.getElementById("summary").innerHTML=`
@@ -348,24 +367,37 @@
       </table>
     `;
 
-    // Band summary table
+    // Band summary table (Emerging to Exemplary)
     let bandRows = "<tr><th>Band</th><th>Range</th><th>Count</th></tr>";
-    for(const [name,[lo,hi]] of Object.entries(bands)){
+    for(const [name,[lo,hi]] of Object.entries(bands5)){
       const count = scores.filter(s=>s>=lo && s<=hi).length;
       bandRows += `<tr><td>${name}</td><td>${lo.toFixed(1)} – ${hi.toFixed(1)}</td><td>${count}</td></tr>`;
     }
     document.getElementById("bandsTable").innerHTML = bandRows;
 
-    // Student + band table
+    // 1-9 distribution table
+    let stanineRows = "<tr><th>Grade</th><th>Approx. score range</th><th>Count</th></tr>";
+    for (let grade = 1; grade <= 9; grade++) {
+      const [rawLow, rawHigh] = stanineBands[grade];
+      const count = scores.filter(s => s >= rawLow && s < rawHigh).length;
+      stanineRows += `<tr>
+        <td>${grade}</td>
+        <td>${rawLow.toFixed(1)} – ${rawHigh.toFixed(1)}</td>
+        <td>${count}</td>
+      </tr>`;
+    }
+    document.getElementById("stanineTable").innerHTML = stanineRows;
+
+    // Student + 5-band table
     let rows = "<tr><th>#</th><th>Score</th><th>Band</th></tr>";
     scores.forEach((s,i)=>{
-      const band = Object.entries(bands).find(([_,[l,h]])=>s>=l && s<=h)?.[0] ?? "N/A";
+      const band = Object.entries(bands5).find(([_,[l,h]])=>s>=l && s<=h)?.[0] ?? "N/A";
       rows+=`<tr><td>${i+1}</td><td>${s}</td><td>${band}</td></tr>`;
     });
     document.getElementById("studentsTable").innerHTML=rows;
 
-    // Background band colours (using Misk palette)
-    const bandColours={
+    // Background colours
+    const bandColours5={
       "Emerging":"rgba(220, 68, 5, 0.10)",     // Orange
       "Developing":"rgba(0, 51, 160, 0.10)",   // Blue
       "Secured":"rgba(33, 181, 143, 0.10)",    // Turquoise
@@ -373,20 +405,33 @@
       "Exemplary":"rgba(92, 6, 140, 0.10)"     // Purple
     };
 
-    const bandPlugin={
-      id:"bandBG",
+    const stanineColours = [
+      "rgba(0, 55, 42, 0.08)",  // 1
+      "rgba(0, 99, 91, 0.10)",  // 2
+      "rgba(0, 51, 160, 0.10)", // 3
+      "rgba(33, 181, 143, 0.10)",//4
+      "rgba(255, 181, 0, 0.10)", //5
+      "rgba(220, 68, 5, 0.10)",  //6
+      "rgba(92, 6, 140, 0.10)",  //7
+      "rgba(196, 214, 0, 0.10)", //8 lime-ish
+      "rgba(255, 107, 107, 0.10)"//9
+    ];
+
+    // Plugin for 5-band chart
+    const bandPlugin5={
+      id:"bandBG5",
       beforeDraw(chart){
         const {ctx, chartArea, scales:{x,y}}=chart;
         ctx.save();
-        for(const [name,[lo,hi]] of Object.entries(bands)){
+        for(const [name,[lo,hi]] of Object.entries(bands5)){
           const start=Math.max(lo,xMin), end=Math.min(hi,xMax);
           const xStart=x.getPixelForValue(start);
           const xEnd=x.getPixelForValue(end);
-          ctx.fillStyle=bandColours[name];
+          ctx.fillStyle=bandColours5[name];
           ctx.fillRect(xStart,chartArea.top,xEnd-xStart,chartArea.bottom-chartArea.top);
 
           const mid=(start+end)/2;
-          const labelY=y.getPixelForValue(normalPdf(mid,mean,sd))*1;
+          const labelY=y.getPixelForValue(normalPdf(mid,mean,sd));
           ctx.fillStyle="#374151";
           ctx.font="10px system-ui";
           ctx.textAlign="center";
@@ -396,11 +441,36 @@
       }
     };
 
-    // Draw chart
-    const ctx=document.getElementById("curveChart").getContext("2d");
+    // Plugin for 1-9 chart
+    const bandPlugin9={
+      id:"bandBG9",
+      beforeDraw(chart){
+        const {ctx, chartArea, scales:{x,y}}=chart;
+        ctx.save();
+        for(let grade=1; grade<=9; grade++){
+          const [loRaw, hiRaw] = stanineBands[grade];
+          const start=Math.max(loRaw,xMin), end=Math.min(hiRaw,xMax);
+          const xStart=x.getPixelForValue(start);
+          const xEnd=x.getPixelForValue(end);
+          ctx.fillStyle=stanineColours[grade-1];
+          ctx.fillRect(xStart,chartArea.top,xEnd-xStart,chartArea.bottom-chartArea.top);
+
+          const mid=(start+end)/2;
+          const labelY=y.getPixelForValue(normalPdf(mid,mean,sd));
+          ctx.fillStyle="#374151";
+          ctx.font="10px system-ui";
+          ctx.textAlign="center";
+          ctx.fillText(grade.toString(),(xStart+xEnd)/2,labelY-10);
+        }
+        ctx.restore();
+      }
+    };
+
+    // Draw first chart (5 bands)
+    const ctx1=document.getElementById("curveChart").getContext("2d");
     if(chartInstance) chartInstance.destroy();
 
-    chartInstance=new Chart(ctx,{
+    chartInstance=new Chart(ctx1,{
       type:"line",
       data:{
         datasets:[{
@@ -438,7 +508,52 @@
           }
         }
       },
-      plugins:[bandPlugin]
+      plugins:[bandPlugin5]
+    });
+
+    // Draw second chart (1-9)
+    const ctx2=document.getElementById("stanineChart").getContext("2d");
+    if(stanineChartInstance) stanineChartInstance.destroy();
+
+    stanineChartInstance=new Chart(ctx2,{
+      type:"line",
+      data:{
+        datasets:[{
+          label:"Bell curve",
+          data:xs.map((v,i)=>({x:v,y:ys[i]})),
+          borderColor: "#00372A",
+          borderWidth:2,
+          pointRadius:0,
+          tension:0.25
+        }]
+      },
+      options:{
+        plugins:{legend:{display:false}, tooltip:{enabled:false}},
+        scales:{
+          x:{
+            type:"linear",
+            min:xMin,
+            max:xMax,
+            title:{display:true,text:`Score (out of ${maxMarks})`},
+            ticks:{
+              maxTicksLimit:7,
+              font:{size:11},
+              callback:(v)=>Number.isInteger(v)?v:""
+            }
+          },
+          y:{
+            min:0,
+            max:maxY*1.25,
+            ticks:{
+              maxTicksLimit:5,
+              font:{size:11},
+              callback:v=>v.toFixed(2)
+            },
+            title:{display:true,text:"Density"}
+          }
+        }
+      },
+      plugins:[bandPlugin9]
     });
   }
 
