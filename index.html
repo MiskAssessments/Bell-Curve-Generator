@@ -184,7 +184,7 @@
     canvas {
       background: #ffffff;
       border-radius: 10px;
-      height: 280px !important;
+      height: 260px !important;
       border: 1px solid #E5E7EB;
       margin-bottom: 10px;
     }
@@ -266,6 +266,9 @@
 
       <p class="subheading" style="margin-top:4px;">Bell curve - 1 to 9 grading scale</p>
       <canvas id="stanineChart"></canvas>
+
+      <p class="subheading" style="margin-top:4px;">Student scores with 1 to 9 band</p>
+      <table id="studentsStanineTable"></table>
     </div>
     <div>
       <p class="subheading">Summary statistics</p>
@@ -396,6 +399,21 @@
     });
     document.getElementById("studentsTable").innerHTML=rows;
 
+    // Student + 1–9 band table
+    let rowsStan = "<tr><th>#</th><th>Score</th><th>Grade (1–9)</th></tr>";
+    scores.forEach((s,i)=>{
+      let gradeAssigned = "N/A";
+      for (let grade = 1; grade <= 9; grade++) {
+        const [low, high] = stanineBands[grade];
+        if (s >= low && s < high) {
+          gradeAssigned = grade;
+          break;
+        }
+      }
+      rowsStan += `<tr><td>${i+1}</td><td>${s}</td><td>${gradeAssigned}</td></tr>`;
+    });
+    document.getElementById("studentsStanineTable").innerHTML = rowsStan;
+
     // Background colours
     const bandColours5={
       "Emerging":"rgba(220, 68, 5, 0.10)",     // Orange
@@ -406,15 +424,15 @@
     };
 
     const stanineColours = [
-      "rgba(0, 55, 42, 0.08)",  // 1
-      "rgba(0, 99, 91, 0.10)",  // 2
-      "rgba(0, 51, 160, 0.10)", // 3
-      "rgba(33, 181, 143, 0.10)",//4
-      "rgba(255, 181, 0, 0.10)", //5
-      "rgba(220, 68, 5, 0.10)",  //6
-      "rgba(92, 6, 140, 0.10)",  //7
-      "rgba(196, 214, 0, 0.10)", //8 lime-ish
-      "rgba(255, 107, 107, 0.10)"//9
+      "rgba(0, 55, 42, 0.08)",   // 1
+      "rgba(0, 99, 91, 0.10)",   // 2
+      "rgba(0, 51, 160, 0.10)",  // 3
+      "rgba(33, 181, 143, 0.10)",// 4
+      "rgba(255, 181, 0, 0.10)", // 5
+      "rgba(220, 68, 5, 0.10)",  // 6
+      "rgba(92, 6, 140, 0.10)",  // 7
+      "rgba(196, 214, 0, 0.10)", // 8
+      "rgba(255, 107, 107, 0.10)"// 9
     ];
 
     // Plugin for 5-band chart
